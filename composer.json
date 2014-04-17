@@ -1,5 +1,7 @@
 {
-    "name": "ignition/allspark",
+    "name": "habitinc/allspark",
+    "description": "Plugin base",
+    "license": "proprietary",
     "authors": [
         {
             "name": "Jeremy Massel",
