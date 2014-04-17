@@ -11,9 +11,8 @@
     "require": {
 
     },
+   	"type": "library",
 	"autoload": {
-        "psr-0": {
-            "AllSpark": "src/"
-        }
+        "psr-4": { "": "src/" }
     }
 }
