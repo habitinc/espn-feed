@@ -16,6 +16,10 @@ class AllSpark{
 		add_action('parse_request', array($this, 'intercept_api_requests'));
 	}
 	
+	public static function test(){
+		echo 'ok';
+	}
+	
 	/**
 	Add the rewrite rules for APIs
 	

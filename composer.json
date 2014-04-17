@@ -1,20 +1,17 @@
 {
     "name": "ignition/allspark",
-    "description": "Plugin base for simpler plugins",
-  	"homepage": "https://github.com/habitinc/allspark",
-    "license": "proprietary",
     "authors": [
         {
             "name": "Jeremy Massel",
             "email": "jeremy@ignitionmedia.ca"
         }
     ],
-    "minimum-stability": "dev",
     "require": {
-		"php": ">=5.2"
-	},
-	"type": "library",
+
+    },
 	"autoload": {
-		"psr-0": {"AllSpark": "src/"}
-	}
+        "psr-0": {
+            "AllSpark": "src/"
+        }
+    }
 }
