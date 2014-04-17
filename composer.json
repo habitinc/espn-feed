@@ -1,0 +1,15 @@
+{
+    "name": "ignition/allspark",
+    "description": "Plugin base for simpler plugins",
+    "license": "Only Ignition can use this",
+    "authors": [
+        {
+            "name": "Jeremy Massel",
+            "email": "jeremy@ignitionmedia.ca"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {
+
+    }
+}
