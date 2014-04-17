@@ -1,4 +1,7 @@
 <?php
 
+require_once('vendor/autoload.php');
 
-die("YAY");
+$test = new AllSpark();
+
+die("OK\n\n");

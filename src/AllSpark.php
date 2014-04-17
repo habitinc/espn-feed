@@ -1,7 +1,5 @@
 <?php
 
-namespace AllSpark;
-
 class AllSpark{
 	/**  @internal	**/
 	private $version = 0.01;
