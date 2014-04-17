@@ -15,8 +15,6 @@
 	},
 	"type": "library",
 	"autoload": {
-		"files": [
-            "src/AllSpark.php"
-        ]
+		"psr-0": {"AllSpark": "src/"}
 	}
 }
