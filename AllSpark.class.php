@@ -9,23 +9,27 @@ if(!class_exists('AllSpark')) {
 
 	abstract class AllSpark{
 		/**  @internal	**/
-		private $version = 0.03;
+		private $version = "0.0.5";
 		
 		/** 
 		The __constuct method bootstraps the entire plugin. It should not be modified. It is possible to override it, but you probably don't want to
 		
 		@internal	**/
 		protected function __construct($req_allspark_version = false){
-			if($req_allspark_version && $req_allspark_version > $this->version) {
+		
+			if(!$req_allspark_version && isset($this->required_allspark_version)){
+				$req_allspark_version = $this->required_allspark_version;
+			}
+
+			if($req_allspark_version !== false && !version_compare($req_allspark_version, $this->version, '<=')){
 				trigger_error("The required version ({$req_allspark_version}) of the AllSpark plugin ({$this->version}) was not loaded. Please update your plugins.", E_USER_ERROR);
 				return;
 			}
 			
-			
 			//if the main plugin file isn't called index.php, activation hooks will fail
 			register_activation_hook( dirname(__FILE__) . '/index.php', array($this, 'pluginDidActivate'));
 			register_deactivation_hook( dirname(__FILE__) . '/index.php', array($this, 'pluginDidDeactivate'));
-			register_uninstall_hook(__FILE__, array($this, 'pluginWillBeDeleted'));
+			//register_uninstall_hook(__FILE__, array($this, 'pluginWillBeDeleted'));
 			
 			$this->add_action('init', '_init', 0, 1);	//ensure our internal init function gets called no matter what
 			$this->add_action('init');					//make it so subclasses can use `init` as well
@@ -68,16 +72,41 @@ if(!class_exists('AllSpark')) {
 		
 		@param string $name The name of the action you wish to hook into
 		@param string $callback [optional] The class method you wish to be called for this hook
-		 
+		@param int $priority [optional] Used to specify the order in which the functions associated with a particular action are executed. Lower numbers correspond with earlier execution, and functions with the same priority are executed in the order in which they were added to the filter.  
+		@param int $accepted_args [optional] The number of arguments the hooked function accepts. In WordPress 1.5.1+, hooked functions can take extra arguments that are set when the matching do_action() or apply_filters() call is run.
 		*/
-		protected function add_action($name, $callback = false){
+		protected function add_action($name, $callback = false, $priority = 10, $accepted_args = 1){
 		
 			if(!$callback){
 				$callback = $name;
 			}
+			
+			if(is_object($callback) && ($callback instanceof Closure)){
+				add_action($name, $callback, $priority, $accepted_args);
+			}
+			else if(method_exists($this, $callback)){
+				add_action($name, array($this, $callback), $priority, $accepted_args);
+			}
+		}
 		
-			if(method_exists($this, $callback)){
-				add_action($name, array($this, $callback));
+		/**
+		Attaches a method on the current object to a WordPress hook. By default, the method name is the same as the hook name. In some cases, this behavior may not be desirable and can be overridden.
+		
+		@param string $name The name of the action you wish to hook into
+		@param string $callback [optional] The class method you wish to be called for this hook
+		@param int $priority [optional] Used to specify the order in which the functions associated with a particular action are executed. Lower numbers correspond with earlier execution, and functions with the same priority are executed in the order in which they were added to the filter.  
+		@param int $accepted_args [optional] The number of arguments the function(s) accept(s). In WordPress 1.5.1 and newer hooked functions can take extra arguments that are set when the matching apply_filters() call is run. 
+		*/
+		protected function add_filter($name, $callback = false, $priority = 10, $accepted_args = 1) {
+			if(!$callback){
+				$callback = $name;
+			}
+			
+			if(is_object($callback) && ($callback instanceof Closure)){
+				add_filter($name, $callback, $priority, $accepted_args);
+			}
+			else if(method_exists($this, $callback)) {
+				add_filter($name, array($this, $callback), $priority, $accepted_args);
 			}
 		}
 		
@@ -111,15 +140,15 @@ if(!class_exists('AllSpark')) {
 			
 			$self = $this;
 			
+			$action = function() use ($self){
+				return $self->call($_REQUEST['action'], $_REQUEST);
+			};
+			
 			if($must_be_logged_in !== true){
-				add_action( 'wp_ajax_nopriv_' . $name, array($this, function() use ($self){
-					$self->call($_REQUEST['action'], $_REQUEST);
-				}));
+				add_action( 'wp_ajax_nopriv_' . $name, $action);
 			}
 			
-			add_action( 'wp_ajax_' . $name, array($this, function() use ($self){
-				$self->call($_REQUEST['action'], $_REQUEST);
-			}));
+			add_action( 'wp_ajax_' . $name, $action );
 		}
 		
 		/*
@@ -246,7 +275,15 @@ if(!class_exists('AllSpark')) {
 		final private function __clone() {
 			trigger_error('Cannot clone an instance of a singleton AllSpark-derived plugin', E_USER_ERROR);			
 		}
-
+		
+		/** 
+		Prevent serializing (because we can't unserialize)
+			
+		@internal	**/
+		final private function __sleep() {
+			trigger_error('Cannot serialize an instance of a singleton AllSpark-derived plugin', E_USER_ERROR);	
+		}
+		
 		/** 
 		Prevent unserializing (breaks singleton pattern)
 			
