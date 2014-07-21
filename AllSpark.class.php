@@ -8,31 +8,82 @@ if(!class_exists('AllSpark')) {
 	}
 
 	abstract class AllSpark{
+
 		/**  @internal	**/
-		private $version = "0.0.5";
+		const VERSION = "0.0.7";
+		
+		/** Base file for plugin @see _loadPluginInfo() @internal */
+		protected $pluginBase = false;
+		
+		/** Plugin metadata @see _loadPluginInfo() @internal */
+		protected $pluginInfo = false;
+		
+		/** Plugin Slug @see _loadPluginInfo() @internal */
+		protected $pluginSlug = false;
+		
+		/** Flag to block checking WP for updates to this plugin. */
+		protected $updateBlockWP = false;
+		
+		/** Flag to enable checking for updates in a custom plugin repository */
+		protected $updateUseCustom = false;
 		
 		/** 
-		The __constuct method bootstraps the entire plugin. It should not be modified. It is possible to override it, but you probably don't want to
+		The __construct method bootstraps the entire plugin. It should not be modified. It is possible to override it, but you probably don't want to
 		
 		@internal	**/
 		protected function __construct($req_allspark_version = false){
-		
+			//If the required version param wasn't passed to the contructor, but was defined by the base class, we can use that instead.
 			if(!$req_allspark_version && isset($this->required_allspark_version)){
 				$req_allspark_version = $this->required_allspark_version;
 			}
-
-			if($req_allspark_version !== false && !version_compare($req_allspark_version, $this->version, '<=')){
-				trigger_error("The required version ({$req_allspark_version}) of the AllSpark plugin ({$this->version}) was not loaded. Please update your plugins.", E_USER_ERROR);
+			
+			//Make sure AllSpark is running at least the version specified by the implementing plugin
+			if($req_allspark_version !== false && !version_compare($req_allspark_version, self::VERSION, '<=')){
+				trigger_error("The required version ({$req_allspark_version}) of the AllSpark plugin (".self::VERSION.") was not loaded. Please update your plugins.", E_USER_ERROR);
 				return;
 			}
 			
-			//if the main plugin file isn't called index.php, activation hooks will fail
-			register_activation_hook( dirname(__FILE__) . '/index.php', array($this, 'pluginDidActivate'));
-			register_deactivation_hook( dirname(__FILE__) . '/index.php', array($this, 'pluginDidDeactivate'));
-			//register_uninstall_hook(__FILE__, array($this, 'pluginWillBeDeleted'));
+			$this->_loadPluginInfo();
+			
+			//Register plugin hooks
+			register_activation_hook($this->pluginBase, array($this, 'pluginDidActivate'));
+			register_deactivation_hook($this->pluginBase, array($this, 'pluginDidDeactivate'));
+			//register_uninstall_hook($this->pluginBase, array($this, 'pluginWillBeDeleted'));
 			
 			$this->add_action('init', '_init', 0, 1);	//ensure our internal init function gets called no matter what
 			$this->add_action('init');					//make it so subclasses can use `init` as well
+			
+			//Add filters for handling custom plugin updates
+			$this->add_filter('pre_http_request', 'maybe_block_wp_plugin_update', 10, 3);
+			$this->add_filter('pre_set_site_transient_update_plugins', 'maybe_register_plugin_update');
+			$this->add_filter('plugins_api', 'maybe_modify_plugin_update_info', 10, 3);
+		}
+		
+		/**
+		Attempts to automatically determine the implementing class' plugin base file.
+		
+		Function is normally called during the __construct phase of plugin setup. After calling, the protected members
+		$pluginBase and $pluginInfo should be set to their appropriate values. If you need to override this function 
+		in an implementing class (i.e. if this generic code fails to properly detect the plugin base), have your function
+		set $this->pluginBase to the path of the base plugin file (normally something like 'my-plugin/index.php') and 
+		$this->pluginInfo to an array of metadata (see the example output for the get_plugins function in the WP Codex)
+		
+		*/
+		protected function _loadPluginInfo() {
+			if (!function_exists( 'get_plugins' )) {
+				//To use get_plugins on the front-end, this file needs to be included
+				require_once ABSPATH . 'wp-admin/includes/plugin.php';
+			}
+			
+			//Determine the location of the implementing class, and try to find the plugin base file in that directory
+			$classInfo = new ReflectionClass($this);
+			$pluginRootDir = '/'.explode( '/', plugin_basename($classInfo->getFileName()))[0];
+			$pluginInfo = get_plugins($pluginRootDir);
+			
+			//Set our protected members
+			$this->pluginBase = substr($pluginRootDir . '/' . array_pop(array_keys($pluginInfo)), 1);;
+			$this->pluginInfo = array_pop($pluginInfo);
+			$this->pluginSlug = sanitize_title_with_dashes($this->pluginInfo['Name']);
 		}
 		
 		/**
@@ -64,7 +115,6 @@ if(!class_exists('AllSpark')) {
 		
 		**/
 		function pluginWillBeDeleted(){
-			
 		}
 		
 		/**
@@ -124,10 +174,16 @@ if(!class_exists('AllSpark')) {
 		And references to $this in that file will refer to the plugin object. Once we make PHP 5.4 a dependency for this project, it'll be trivial to replace $self with $this in all the relevant locations and clean up the code a little.
 		
 		@param string $path The relative path of the UI file you wish to embed
-		
+		@param boolean $isRelativePath [optional] True if we should treat the $path parameter as relative to the implementing plugin (the least-surprising behaviour)
 		*/
-		public function addUI($path){
-			require_once($path);
+		public function addUI($path, $isRelativePath = true){
+			if($isRelativePath) {
+				$classInfo = new ReflectionClass($this);
+				require dirname($classInfo->getFileName()).'/'.$path;
+			}
+			else {
+				require $path;
+			}
 		}
 		
 		/**
@@ -170,9 +226,8 @@ if(!class_exists('AllSpark')) {
 			$this->add_action('save_post');
 			$this->add_action('add_meta_boxes');
 			$this->add_action('load-themes.php', 'themeDidChange');
-			
-			//Add a hook to allow enqueing scripts and styles for a given URL
-			$this->add_action('admin_enqueue_scripts', 'enqueue_items_for_url');
+			$this->add_action( 'admin_enqueue_scripts' );
+			$this->add_action( 'wp_enqueue_scripts' );
 			
 			//Add a hook that'll allow handling POST requests for a given URL
 			if('POST' == $_SERVER['REQUEST_METHOD']){
@@ -181,21 +236,21 @@ if(!class_exists('AllSpark')) {
 
 			//Add callbacks for admin pages and script/style registration
 			add_action('admin_menu', function() use ($self){
+				
 				$self->call('add_admin_pages');
-			
-				foreach(array(
-					'register_scripts',
-					'register_styles'
-				) as $command){		
-					$self->call($command);
-				}
+				$self->call('register_scripts');
+				$self->call('register_styles');
 			});
 		
 			//Set up the settings shortcut feature
 			$this->create_settings_shortcut_on_plugin_page();
 			
-			//Register common AllSpark styles
-			wp_register_style( 'allspark', plugin_dir_url(__FILE__) . '/allspark-resources/style.css', false, '1.0.0' );
+			//Register common AllSpark styles, if the file is present
+			$filepath = '/allspark-resources/style.css';
+			
+			if(file_exists(plugin_dir_path(__FILE__) . $filepath)){
+				wp_register_style( 'allspark', plugin_dir_url(__FILE__) . $filepath, false, '1.0.0' );
+			}
 		}
 
 		/**
@@ -218,7 +273,7 @@ if(!class_exists('AllSpark')) {
 			//this closure has a `use` declaration to get around the PHP 5.3 lack of `$this` in closures			
 			$filter = function($links, $file)  use ($settings_url, $unique_name){
 						
-				if ($file == basename(dirname(__FILE__)) . '/index.php' && wp_cache_get( $unique_name, __CLASS__ ) == false) {
+				if ($file == $this->pluginBase && wp_cache_get( $unique_name, __CLASS__ ) == false) {
 						
 					$settings_url = get_bloginfo('wpurl') . '/wp-admin/admin.php?page=' . $settings_url;
 					$settings_link = "<a href='$settings_url'>Settings</a>";
@@ -234,6 +289,137 @@ if(!class_exists('AllSpark')) {
 				add_filter('plugin_action_links', $filter, 10, 2);
 			}			
 		}
+
+		/*
+		**
+		**	WP Automatic Updates
+		**
+		*/
+		
+		/**
+		(Possibly) Block this plugin from the standard Wordpress update
+		
+		Hooks any http request going to api.wordpress.org/plugins/update-check/1.1 to remove all hints of this plugin. Have the implementing
+		class toggle either $updateBlockWP or $updateUseCustom to enable this behaviour.
+		@internal */
+		function maybe_block_wp_plugin_update($ret, $args, $url) {
+			if(!$this->updateBlockWP && !$this->updateUseCustom) {
+				//We're not trying to block or override an update, just let everything continue
+				return $ret;
+			}
+			if(false === strpos($url, 'api.wordpress.org/plugins/update-check')) {
+				//This is not the update-check URL, let it continue unhindered
+				return $ret;
+			}
+			if(false === strpos($url, 'update-check/1.1') || !isset($args['body']['plugins'])) {
+				//This is a plugin-update request, but to a different API than we're capable of overriding. Boo
+				trigger_error('AllSpark '.self::VERSION.': Wordpress Core is using an unrecognized update mechanism. Please manually update your AllSpark plugins.', E_USER_WARNING);
+				return $ret;
+			}
+				
+			//At this point, we know the HTTP request is for a plugin update using the 1.1 endpoint. We can modify this.
+			$pluginData = json_decode($args['body']['plugins']);
+			$pluginBase = $this->pluginBase;
+			
+			//Remove our plugin's entry from the list of plugins
+			if(isset($pluginData->plugins->$pluginBase)) {
+				unset($pluginData->plugins->$pluginBase);
+			}
+			
+			//Remove our plugin from active plugins
+			foreach($pluginData->active as $i => $plugin) {
+				if($plugin == $pluginBase) {
+					if(is_array($pluginData->active)) {
+						unset($pluginData->active[$i]);
+					}
+					else if(is_object($pluginData->active) && isset($pluginData->active->$i)){
+						unset($pluginData->active->$i);
+					}
+				}
+			}
+			
+			//Reassemble the args
+			$args['body']['plugins'] = json_encode($pluginData);
+			
+			//Let any other pre_http_request filters run at this time
+			remove_filter('pre_http_request', array(&$this, 'maybe_block_wp_plugin_update'), 10); //if we ever do a remove_filter helper, switch it here
+			$filteredHTTPRequest = apply_filters('pre_http_request', false, $args, $url);
+			
+			//If the filteredHTTPRequest is false, then we're responsible to perform the HTTP request
+			if(false === $filteredHTTPRequest) {
+				$http = _wp_http_get_object();
+				$filteredHTTPRequest = $http->request($url, $args);
+			}
+			
+			//Add this filter back in
+			$this->add_filter('pre_http_request', 'maybe_block_wp_plugin_update', 10, 3);
+			
+			return $filteredHTTPRequest;
+		}
+		
+		/**
+		Query an external private server for plugin updates
+		
+		If $updateUseCustom is set, when Wordpress attempts to save the results of it's own plugin update check, we'll
+		go and check the $updateUseCustom URL for update information
+		@internal */
+		function maybe_register_plugin_update($transient) {
+			if(!$this->updateUseCustom) {
+				//If we're not going to try a custom update, just return the transient value as-is
+				return $transient;
+			}
+			
+			//Call the custom update url to find out if an update is available
+			$update = $this->getCustomUpdateInfo();
+						
+			if(version_compare($update->version, $this->pluginInfo['Version'], '>')) {
+				//Insert our custom update response
+				$myCustomUpdate = new stdClass();
+				$myCustomUpdate->slug = $update->slug;
+				$myCustomUpdate->new_version = $update->version;
+				$myCustomUpdate->url = $this->updateUseCustom.'?plugin='.$this->pluginSlug;
+				$myCustomUpdate->package = $update->download_link;
+				$transient->response[$this->pluginBase] = $myCustomUpdate;
+			}
+			return $transient;
+		}
+		
+		/**
+		Use custom server information for a plugin
+		
+		If we're using a custom server for updating this plugin, modify the update info to match.
+		@internal */
+		function maybe_modify_plugin_update_info($ret, $action, $args) {
+			if($this->updateUseCustom) {
+				if($args->slug === $this->pluginSlug) {
+					return $this->getCustomUpdateInfo();
+				}
+			}
+			return $ret;
+		}
+		
+		/**
+		Get the update info from the custom update server
+		
+		@internal **/
+		protected function getCustomUpdateInfo() {
+			if(!$this->updateUseCustom) {
+				return false;
+			}
+			
+			$updateRequest = wp_remote_get($this->updateUseCustom.'?plugin='.$this->pluginSlug);
+			if(!is_wp_error($updateRequest) || 200 === wp_remote_retrieve_response_code($updateRequest)) {
+				$ret = json_decode($updateRequest['body']);
+				if($ret->status == 'ok') {
+					return unserialize($ret->data);
+				}
+			}
+			
+			//The request failed
+			return false;
+		}
+		
+		
 		
 		/**
 		Internal command dispatching

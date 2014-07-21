@@ -19,7 +19,7 @@ class ESPNPlugin extends AllSpark
 		});	
 	}
 
-	function enqueue_items_for_url($url){
+	function admin_enqueue_scripts($url){
 		switch($url){
 			case 'settings_page_espn-feed':
 				wp_enqueue_style( 'allspark' );
