@@ -1,68 +1,46 @@
 <?php
 
-include('AllSpark.class.php');
 
-class ESPNPlugin extends AllSpark
-{
+if( ! class_exists( 'AllSpark' ) )
+    require_once 'AllSpark/AllSpark.class.php';
+
+
+class ESPNPlugin extends AllSpark {
+	
 	
 	protected $settings_url = "espn-feed";
+	
+	
 	private $option_keys = array(
 		'api_key',
 		'api_key_is_ok'
 	);
 	
 	public function admin_menu(){
-		$self = $this;
-	
-		$ret = add_options_page( 'ESPN Feed', 'ESPN Feed', 'moderate_comments', $this->settings_url, function() use($self){
-			$self->addUI('ui/admin.php');
-		});	
+		add_options_page(
+			'ESPN Feed',
+			'ESPN Feed',
+			'moderate_comments',
+			$this->settings_url,
+			array( $this, 'settings_page' )
+		);
 	}
-
+	
+	public function settings_page() {
+		$this->addUI( 'ui/admin.php' );
+	}
+	
+	
 	function admin_enqueue_scripts($url){
-		switch($url){
-			case 'settings_page_espn-feed':
-				wp_enqueue_style( 'allspark' );
-			break;
-		}
+		if( 'settings_page_espn-feed' == $url )
+			wp_enqueue_style( 'allspark' );
 	}
 	
 	function handle_form_post_for_url($url){
-		switch($url){
-			case 'settings_page_espn-feed':
-				$this->set_api_key($_POST['api_key']);
-				$this->test_api();
-			break;
+		if( 'settings_page_espn-feed' == $url ) {
+			$this->set_api_key($_POST['api_key']);
+			$this->test_api();
 		}
-	}
-		
-	function pluginWillBeDeleted(){
-	
-		//Clean up all the option keys
-		foreach($this->option_keys as $key){
-			delete_option(__CLASS__ . $key);
-		}
-	}
-	
-	/* Public API Bits */
-	public function get_nhl_headlines(){
-		return $this->do_api_call('http://api.espn.com/v1/sports/hockey/nhl/news/headlines')->headlines;
-	}
-	
-	public function get_nfl_headlines(){
-		return $this->do_api_call('http://api.espn.com/v1/sports/football/nfl/news/headlines')->headlines;
-	}
-	
-	public function get_nba_headlines(){
-		return $this->do_api_call('http://api.espn.com/v1/sports/basketball/nba/news/headlines')->headlines;
-	}
-	
-	public function get_ncaa_football_headlines(){
-		return $this->do_api_call('http://api.espn.com/v1/sports/football/college-football/news/headlines')->headlines;
-	}
-	
-	public function get_mlb_headlines(){
-		return $this->do_api_call('http://api.espn.com/v1/sports/baseball/mlb/news/headlines')->headlines;
 	}
 	
 	protected function set_api_key($key){
@@ -74,27 +52,53 @@ class ESPNPlugin extends AllSpark
 	}
 	
 	protected function test_api(){
-		$val = ($this->do_api_call('http://api.espn.com/v1/sports/news/headlines/top', false) !== false);
-		update_option(__CLASS__ . 'api_key_is_ok', $val);
-		return $val;
+		$result = $this->do_api_call( 'http://api.espn.com/v1/sports', false );
+		$okay = ( $result && isset( $result->status ) && 'success' == $result->status );
+		update_option( __CLASS__ . 'api_key_is_ok', $okay );
+		return $okay;
 	}
 	
-	private function do_api_call($url, $cacheFor = 60){
-		
+	
+	/* Public API Bits */
+	public function get_nhl_headlines(){
+		return $this->do_api_call( 'http://api.espn.com/v1/sports/hockey/nhl/news/headlines' );
+	}
+	
+	public function get_nfl_headlines(){
+		return $this->do_api_call( 'http://api.espn.com/v1/sports/football/nfl/news/headlines' );
+	}
+	
+	public function get_nba_headlines(){
+		return $this->do_api_call( 'http://api.espn.com/v1/sports/basketball/nba/news/headlines' );
+	}
+	
+	public function get_ncaa_football_headlines(){
+		return $this->do_api_call( 'http://api.espn.com/v1/sports/football/college-football/news/headlines' );
+	}
+	
+	public function get_mlb_headlines(){
+		return $this->do_api_call( 'http://api.espn.com/v1/sports/baseball/mlb/news/headlines' );
+	}
+	
+	private function do_api_call( $url, $cacheFor=60 ){
 		$key = sha1($url);
 		$url .= "?apikey=" . $this->get_api_key();
-				
+		
 		//If we don't have a transient, OR we want to ignore the cache
-		if(!get_transient($key) || $cacheFor === false){
+		if( ! get_transient( $key ) || $cacheFor === false ){
 			$response = wp_remote_get( $url );
-			set_transient($key, json_decode($response['body']), $cacheFor);
+			$reply = json_decode( $response['body'] );
+			
+			$headlines = array();
+			if( isset( $reply->headlines ) )
+				$headlines = $reply->headlines;
+			
+			set_transient( $key, $headlines, $cacheFor );
 		}
 		
-		return get_transient($key);
+		return get_transient( $key );
 	}
 }
 
-//Fire it up
-ESPNPlugin::getInstance();
 
-?>
+ESPNPlugin::getInstance();
