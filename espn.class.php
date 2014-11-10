@@ -4,6 +4,7 @@
 if( ! class_exists( 'AllSpark' ) )
     require_once 'AllSpark/AllSpark.class.php';
 
+require_once 'vendor/autoload.php';
 
 class ESPNPlugin extends AllSpark {
 	
@@ -15,21 +16,6 @@ class ESPNPlugin extends AllSpark {
 		'api_key',
 		'api_key_is_ok'
 	);
-	
-	public function admin_menu(){
-		add_options_page(
-			'ESPN Feed',
-			'ESPN Feed',
-			'moderate_comments',
-			$this->settings_url,
-			array( $this, 'settings_page' )
-		);
-	}
-	
-	public function settings_page() {
-		$this->addUI( 'ui/admin.php' );
-	}
-	
 	
 	function admin_enqueue_scripts($url){
 		if( 'settings_page_espn-feed' == $url )
@@ -58,26 +44,58 @@ class ESPNPlugin extends AllSpark {
 		return $okay;
 	}
 	
-	
 	/* Public API Bits */
 	public function get_nhl_headlines(){
-		return $this->do_api_call( 'http://api.espn.com/v1/sports/hockey/nhl/news/headlines' );
+		return $this->do_rss_call( 'http://sports.espn.go.com/espn/rss/nhl/news' );
 	}
 	
 	public function get_nfl_headlines(){
-		return $this->do_api_call( 'http://api.espn.com/v1/sports/football/nfl/news/headlines' );
+		return $this->do_rss_call( 'http://sports.espn.go.com/espn/rss/nfl/news' );
 	}
 	
 	public function get_nba_headlines(){
-		return $this->do_api_call( 'http://api.espn.com/v1/sports/basketball/nba/news/headlines' );
+		return $this->do_rss_call( 'http://sports.espn.go.com/espn/rss/nba/news' );
 	}
 	
 	public function get_ncaa_football_headlines(){
-		return $this->do_api_call( 'http://api.espn.com/v1/sports/football/college-football/news/headlines' );
+		return $this->do_rss_call( 'http://sports.espn.go.com/espn/rss/ncf/news' );
 	}
 	
 	public function get_mlb_headlines(){
-		return $this->do_api_call( 'http://api.espn.com/v1/sports/baseball/mlb/news/headlines' );
+		return $this->do_rss_call( 'http://sports.espn.go.com/espn/rss/mlb/news' );
+	}
+	
+	private function do_rss_call( $url, $cacheFor = 60){
+		try{
+			$key = sha1($url);
+		
+			//If we don't have a transient, OR we want to ignore the cache
+			if( ! get_transient( $key ) || $cacheFor === false ){
+		
+				$feed = new SimplePie();
+				$feed->enable_cache(false);
+				$feed->set_feed_url($url);
+				$feed->init();
+		
+				$headlines = array();
+		
+				foreach ($feed->get_items() as $item){
+					$headline = new stdClass();
+					$headline->headline = $item->get_title();
+					$headline->description = $item->get_content();
+					$headline->link = $item->get_permalink();
+			
+					$headlines[] = $headline;
+				}
+			
+				set_transient( $key, $headlines, $cacheFor );
+			}
+		
+			return get_transient( $key );
+		}
+		catch(Exception $ex){
+			return false;
+		}
 	}
 	
 	private function do_api_call( $url, $cacheFor=60 ){
