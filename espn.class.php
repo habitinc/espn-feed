@@ -2,7 +2,7 @@
 
 
 if( ! class_exists( 'AllSpark' ) )
-    require_once 'AllSpark/AllSpark.class.php';
+    require_once 'AllSpark.class.php';
 
 require_once 'vendor/autoload.php';
 
